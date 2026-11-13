@@ -1,7 +1,8 @@
 import { matchText } from "./match.js";
 
 const $ = (id) => document.getElementById(id);
-const API = (window.APP_CONFIG?.API_BASE || "").replace(/\/$/, "");
+const isLocal = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+const API = isLocal ? "" : (window.APP_CONFIG?.API_BASE || "").replace(/\/$/, "");
 const TYPES = {
   CUSTOMER_RETURN_PICKUP: ["رجوع من العميل", "rt"],
   EXCHANGE: ["استبدال", "ex"],
@@ -94,7 +95,7 @@ async function search(raw) {
   }
 }
 
-$("form").onsubmit = (e) => { e.preventDefault(); search($("tn").value); $("tn").select(); };
+$("form").onsubmit = (e) => { e.preventDefault(); search($("tn").value); };
 $("go").onclick = () => {
   $("status").textContent = "";
   $("result").innerHTML = `<article class="ship">${renderItems($("txt").value, "النص")}</article>`;
@@ -113,3 +114,22 @@ $("cam").onclick = async () => {
     });
   } catch (e) { box.hidden = true; scanner = null; $("status").className = "err"; $("status").textContent = "تعذّر تشغيل الكاميرا: " + e; }
 };
+
+// ── وضع السكانر: أي مسح يُلتقط تلقائياً ويبحث فوراً ──
+const tnInput = $("tn");
+let idle;
+const focusScan = () => { if (!document.activeElement || !/^(TEXTAREA|SUMMARY)$/.test(document.activeElement.tagName)) tnInput.focus(); };
+focusScan();
+document.addEventListener("click", () => setTimeout(focusScan, 0));
+// لو الفوكس ضاع، أول حرف يصل من السكانر يرجّع التركيز لخانة البحث
+document.addEventListener("keydown", (e) => {
+  if (e.ctrlKey || e.altKey || e.metaKey || e.key.length > 1 && e.key !== "Enter") return;
+  if (!/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) tnInput.focus();
+});
+// السكانر الذي لا يرسل Enter: نبحث بعد توقف الإدخال لحظة قصيرة
+tnInput.addEventListener("input", () => {
+  clearTimeout(idle);
+  if (/\d{7,}/.test(tnInput.value)) idle = setTimeout(() => $("form").requestSubmit(), 250);
+});
+// بعد كل بحث نُفرّغ الخانة ونجهّز للمسح التالي
+$("form").addEventListener("submit", () => { clearTimeout(idle); setTimeout(() => { tnInput.value = ""; tnInput.focus(); }, 50); });
