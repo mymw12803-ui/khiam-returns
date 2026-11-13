@@ -68,6 +68,11 @@ async function search(raw) {
   const st = $("status");
   st.className = "";
   if (!tn) { st.className = "err"; st.textContent = "لم أستطع قراءة رقم تتبع صالح"; return; }
+  if (!API && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
+    st.className = "err";
+    st.textContent = "لم يتم ربط الموقع بالخادم بعد: ضع رابط الـ Worker في config.js (API_BASE). البحث اليدوي بالنص يعمل بدونه.";
+    return;
+  }
   st.textContent = "جارٍ البحث عن " + tn + " …";
   $("result").innerHTML = "";
   try {
