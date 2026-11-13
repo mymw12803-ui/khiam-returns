@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>مرتجعات خيام</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>📦 استلام المرتجعات</h1>
+  <small id="meta"></small>
+</header>
+
+<main>
+  <section class="scan">
+    <form id="form">
+      <input id="tn" inputmode="numeric" autocomplete="off" autofocus placeholder="امسح الباركود بالجهاز أو اكتب رقم التتبع ثم Enter">
+      <button type="submit">بحث</button>
+      <button type="button" id="cam" class="alt">📷 كاميرا</button>
+    </form>
+    <div id="reader" hidden></div>
+  </section>
+
+  <div id="status" role="status"></div>
+  <div id="result"></div>
+
+  <details class="manual">
+    <summary>بحث يدوي بنص الوصف / الملحوظة (بدون API)</summary>
+    <textarea id="txt" rows="3" placeholder="مثال: اسدال مشجر اطفالي - اصفر (Y2) / الثالث (QTY 1)"></textarea>
+    <button id="go" type="button">مطابقة</button>
+  </details>
+
+  <section id="hist-wrap" hidden>
+    <h3>آخر ما تم مسحه</h3>
+    <ul id="hist"></ul>
+  </section>
+</main>
+
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="config.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

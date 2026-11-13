@@ -1,0 +1,8 @@
+name = "khiam-returns-api"
+main = "index.js"
+compatibility_date = "2025-01-01"
+# المفاتيح تُضاف كأسرار بالأمر:
+#   npx wrangler secret put BOSTA_API_KEY_1
+#   npx wrangler secret put BOSTA_API_KEY_2
+# [vars]
+# ALLOWED_ORIGIN = "https://USERNAME.github.io"
