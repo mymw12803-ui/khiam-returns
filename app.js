@@ -66,13 +66,18 @@ function applyAI(base, res) {
 async function askAI(scenario) {
   const cur = current;
   cur.ai[scenario] = { status: "loading" };
+  const call = async () => (await fetch(`${API}/api/ai`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ scenario, type: cur.delivery.type, description: cur.delivery.description, notes: cur.delivery.notes, catalog }),
+  })).json();
   try {
-    const r = await fetch(`${API}/api/ai`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ scenario, type: cur.delivery.type, description: cur.delivery.description, notes: cur.delivery.notes, catalog }),
-    });
-    const j = await r.json();
+    let j = await call();
+    // ضغط مؤقت على Gemini (503/429): نعيد المحاولة تلقائياً مرتين
+    for (let n = 0; n < 2 && !j.ok && /Gemini (503|429|500)/.test(j.error || ""); n++) {
+      await new Promise((ok) => setTimeout(ok, 1200 * (n + 1)));
+      j = await call();
+    }
     cur.ai[scenario] = j.ok ? { status: "done", result: j } : { status: "error", error: j.error === "no-key" ? "مفتاح Gemini غير مضبوط في الـ Worker" : j.error };
   } catch (e) {
     cur.ai[scenario] = { status: "error", error: "الذكاء الاصطناعي غير متاح" };
@@ -127,7 +132,7 @@ function paint() {
   const got = view.expected.reduce((s, i) => s + (current.received[itemId(i)] ?? 0), 0);
   let aiLine = "";
   if (ai?.status === "loading") aiLine = `<div class="ailine">🤖 الذكاء الاصطناعي يحلل البوليصة…</div>`;
-  else if (ai?.status === "error") aiLine = `<div class="ailine err">🤖 ${esc(ai.error)} — راجع النص بنفسك.</div>`;
+  else if (ai?.status === "error") aiLine = `<div class="ailine err">🤖 ${/Gemini (503|429|500)/.test(ai.error) ? "Gemini مشغول حالياً" : esc(ai.error)} — راجع النص بنفسك أو <button type="button" class="sm alt" data-act="retryai">🔄 أعد المحاولة</button></div>`;
   else if (view.aiUsed || view.aiNote) {
     const unsure = view.aiConfidence !== "high";
     aiLine = `<div class="ailine ${unsure ? "err" : ""}">🤖 ${esc(view.aiNote || "")}${unsure ? " — ⚠ الذكاء الاصطناعي غير متأكد: افتح الطرد وقارن بنص البوليصة" : ""}</div>`;
@@ -165,6 +170,7 @@ $("result").addEventListener("click", (e) => {
   if (b.dataset.act === "inc") r[id] = (r[id] ?? 0) + 1;
   else if (b.dataset.act === "dec") r[id] = Math.max(0, (r[id] ?? 0) - 1);
   else if (b.dataset.act === "all") r[id] = +b.dataset.qty;
+  else if (b.dataset.act === "retryai") { delete current.ai[current.view.scenario]; refresh(); return; }
   else if (b.dataset.act === "pick") {
     const it = current.view.expected.find((x) => x.key === b.dataset.key);
     const c = it?.candidates[+b.dataset.n];
