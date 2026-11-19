@@ -207,6 +207,11 @@ export default {
 
     const url = new URL(req.url);
 
+    // رابط الـ Worker نفسه ليس صفحة: نحوّل من يفتحه إلى الموقع
+    if (url.pathname === "/" || url.pathname === "") {
+      return Response.redirect(env.SITE_URL || "https://mymw12803-ui.github.io/khiam-returns/", 302);
+    }
+
     if (url.pathname === "/api/health") {
       return json({ ok: true, ai: !!(env.GEMINI_API_KEY || "").trim(), model: (env.GEMINI_MODEL || DEFAULT_MODEL).trim(), bostaKeys: [env.BOSTA_API_KEY_1, env.BOSTA_API_KEY_2].filter((k) => (k || "").trim()).length });
     }
