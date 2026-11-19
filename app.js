@@ -245,7 +245,9 @@ function verify() {
   setStatus(`✅ تم تسجيل ${d.trackingNumber} — ${status}. امسح البوليصة التالية.`);
   current = null;
   paint();
-  $("tn").focus();
+  if (!touch) $("tn").focus();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  afterVerify();
 }
 
 const fmtTime = (iso) => new Date(iso).toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" });
@@ -313,26 +315,60 @@ $("clear").onclick = () => {
   log = []; saveLog(); drawLog();
 };
 
-// ───────── الكاميرا ─────────
-let scanner = null;
-$("cam").onclick = async () => {
+// ───────── الكاميرا (الهاتف) ─────────
+// يقرأ باركود البوليصة أو الـ QR، يغلق الكاميرا ويعرض المطلوب استلامه.
+// بعد «تم التحقق» تُفتح الكاميرا تلقائياً للبوليصة التالية (وضع المسح المتتابع).
+let scanner = null, camMode = false;
+async function stopCam() {
+  if (scanner) await scanner.stop().catch(() => {});
+  scanner = null;
+  $("reader").hidden = true;
+  $("cam").textContent = "📷 كاميرا";
+}
+async function startCam() {
   const box = $("reader");
-  if (scanner) { await scanner.stop().catch(() => {}); scanner = null; box.hidden = true; return; }
   box.hidden = false;
-  scanner = new Html5Qrcode("reader");
+  $("cam").textContent = "✕ إغلاق الكاميرا";
+  const F = window.Html5QrcodeSupportedFormats;
+  scanner = new Html5Qrcode("reader", {
+    verbose: false,
+    formatsToSupport: F ? [F.CODE_128, F.QR_CODE, F.CODE_39, F.EAN_13, F.ITF] : undefined,
+    experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+  });
+  let done = false;
   try {
-    await scanner.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 300, height: 140 } }, async (text) => {
-      await scanner.stop().catch(() => {}); scanner = null; box.hidden = true;
-      $("tn").value = text; search(text);
-    });
-  } catch (e) { box.hidden = true; scanner = null; setStatus("تعذّر تشغيل الكاميرا: " + e, "err"); }
+    await scanner.start(
+      { facingMode: "environment" },
+      { fps: 12, qrbox: (w, h) => ({ width: Math.floor(Math.min(w * 0.92, 460)), height: Math.floor(Math.min(h * 0.45, 200)) }) },
+      async (text) => {
+        if (done || !/\d{6,}/.test(text)) return; // تجاهل أي كود لا يحتوي رقم تتبع
+        done = true;
+        navigator.vibrate?.(80);
+        await stopCam();
+        search(text);
+      },
+    );
+  } catch (e) {
+    await stopCam();
+    camMode = false;
+    setStatus("تعذّر تشغيل الكاميرا: اسمح للموقع باستخدام الكاميرا من إعدادات المتصفح. (" + e + ")", "err");
+  }
+}
+$("cam").onclick = async () => {
+  if (scanner) { camMode = false; await stopCam(); return; }
+  camMode = true;
+  startCam();
 };
+const afterVerify = () => { if (camMode) setTimeout(startCam, 400); };
 
 // ───────── وضع السكانر: أي مسح يُلتقط تلقائياً ويبحث فوراً ─────────
 const tnInput = $("tn");
 let idle;
+// على الهاتف لا نُظهر لوحة المفاتيح تلقائياً (المسح يكون بالكاميرا)
+const touch = matchMedia("(pointer: coarse)").matches;
 const typing = () => /^(TEXTAREA|SELECT|SUMMARY)$/.test(document.activeElement?.tagName || "");
-const focusScan = () => { if (!typing()) tnInput.focus(); };
+const focusScan = () => { if (!touch && !typing()) tnInput.focus(); };
+if (touch) tnInput.removeAttribute("autofocus");
 focusScan();
 document.addEventListener("click", () => setTimeout(focusScan, 0));
 document.addEventListener("keydown", (e) => {
@@ -344,4 +380,5 @@ tnInput.addEventListener("input", () => {
   clearTimeout(idle);
   if (/\d{7,}/.test(tnInput.value)) idle = setTimeout(() => $("form").requestSubmit(), 250);
 });
-$("form").addEventListener("submit", () => { clearTimeout(idle); setTimeout(() => { tnInput.value = ""; tnInput.focus(); }, 50); });
+$("form").addEventListener("submit", () => { clearTimeout(idle); setTimeout(() => { tnInput.value = ""; if (touch) tnInput.blur(); else tnInput.focus(); }, 50); });
+document.body.classList.toggle("touch", touch);
