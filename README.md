@@ -1,32 +1,38 @@
 # مرتجعات خيام
 
-امسح باركود بوليصة Bosta ← يجلب الموقع وصف الشحنة والملحوظة من حسابيك ← يطابقهم مع منتجات khiam.store ويعرض الصور واللون/المقاس والكمية.
+امسح باركود بوليصة Bosta ← يعرض الموقع **فقط ما يجب استلامه** داخل الطرد (صورة + لون/مقاس + كود SKU + الكمية) ← الموظف يعدّ ما استلمه ويضغط «تم التحقق» ← في النهاية تقرير يُنسخ أو يُنزَّل Excel.
 
-## 1) تجربة محلية
-1. ضع المفتاحين في ملف `.env` (`BOSTA_API_KEY_1` و `BOSTA_API_KEY_2`).
-2. `node server.mjs` ثم افتح http://localhost:8799
-3. تحديث المنتجات: `node scripts/sync-products.mjs`
+## كيف يحدد المطلوب استلامه
+| نوع الشحنة في Bosta | المطلوب استلامه | بقي مع العميل |
+|---|---|---|
+| Return to Origin (أوردر مرفوض) | كل ما في وصف الشحنة | — |
+| Customer Return Pickup (استرجاع) | كل ما في وصف الشحنة | — |
+| Exchange (استبدال تم) | المنتج القديم المكتوب في **الملحوظة** (يُعرف بالـ SKU) | ما في وصف الشحنة |
+| Exchange + ملصق RTO (استبدال مرفوض) | ما في وصف الشحنة | المنتج القديم |
 
-## 2) النشر
-GitHub Pages موقع **ثابت** — لا تضع المفاتيح فيه أبداً (أي شخص يستطيع قراءتها). لذلك:
+- الاستبدال المرفوض يُحدد حالياً بخانة «الطرد عليه ملصق RTO» في الصفحة.
+- إذا لم تُحدَّد كل المنتجات بالقواعد (ملحوظة بدون كود، أو اسم غير واضح) يُستدعى **Gemini** تلقائياً.
 
-**أ. الـ API (Cloudflare Worker مجاني) — يحمل المفاتيح كأسرار**
-```bash
-cd worker
-npx wrangler login
-npx wrangler secret put BOSTA_API_KEY_1
-npx wrangler secret put BOSTA_API_KEY_2
-npx wrangler deploy
-```
-انسخ الرابط الناتج (`https://khiam-returns-api.xxx.workers.dev`). يُفضّل فتح `wrangler.toml` وتفعيل `ALLOWED_ORIGIN` بعنوان موقعك على github.io.
+## الملفات
+- `index.html` `app.js` `match.js` `style.css` `config.js` `data/products.json`: الموقع (GitHub Pages).
+- `worker/index.js`: الـ Worker (ملف واحد: Bosta + Gemini). **لا يُرفع على GitHub Pages كموقع، بل يُلصق في Cloudflare.**
+- `.env`: مفاتيحك للتجربة المحلية (مستثنى من GitHub عبر `.gitignore`).
 
-**ب. الموقع على GitHub Pages**
-1. ضع رابط الـ Worker في `config.js` (`API_BASE`).
-2. ارفع المشروع إلى مستودع (ملف `.env` مُستثنى تلقائياً عبر `.gitignore`).
-3. Settings ← Pages ← Deploy from branch ← `main` / root.
-4. تحديث قائمة المنتجات يومياً تلقائياً عبر `.github/workflows/sync.yml` (أو شغّله يدوياً من Actions).
+## تحديث الـ Worker (بدون أي برامج)
+1. dash.cloudflare.com ← Workers & Pages ← `khiam-returns-api` ← **Edit code**.
+2. احذف الكود الموجود والصق محتوى `worker/index.js` كاملاً ← **Deploy**.
+3. Settings ← Variables and Secrets ← **Add** ← النوع Secret ← الاسم `GEMINI_API_KEY` ← الصق المفتاح ← Deploy.
+4. للتأكد افتح: `https://khiam-returns-api.mymw12803.workers.dev/api/health` ويجب أن يظهر `"ai":true`.
+
+(أو بالأوامر إن كان Node.js مثبتاً: `cd worker` ثم `npx wrangler secret put GEMINI_API_KEY` ثم `npx wrangler deploy`.)
+
+## تحديث الموقع على GitHub
+ارفع الملفات: `index.html` `app.js` `match.js` `style.css` `README.md` `worker/index.js` `worker/wrangler.toml` `server.mjs` واحذف `worker/bosta.js`.
+
+## تجربة محلية (تحتاج Node.js 18+)
+`node server.mjs` ثم افتح http://localhost:8799 — يستخدم المفاتيح من `.env`.
 
 ## ملاحظات
-- المطابقة تعتمد على اسم المنتج + اللون/المقاس + الكود بين الأقواس مثل `(Y2)`؛ إن لم يتحدد الشكل بدقة يعرض الاحتمالات.
-- مربع «بحث يدوي» يطابق أي نص بدون API.
-- نقطة جلب الشحنة في `worker/bosta.js` تجرّب عدة صيغ لـ Bosta API؛ لو فشلت كلها مع مفتاح صحيح أرسل لي الرد وسأضبطها.
+- السجل محفوظ في متصفح الجهاز نفسه؛ نزّل ملف Excel قبل «مسح السجل».
+- تحديث قائمة المنتجات يومياً تلقائياً عبر `.github/workflows/sync.yml`. يوجد 7 أشكال بلا SKU في Shopify (اسدال بخمار أطفالي مشجر C1/C2/C3، وخمار مشجر بأكمام بيج D3 الأول) — أضف لها أكواداً.
+- `/api/shipment/<رقم>?inspect` يعرض بيانات Bosta الخام بدون أي بيانات شخصية (للفحص).

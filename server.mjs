@@ -1,9 +1,9 @@
-// خادم محلي للتجربة: يقدّم الموقع + /api/shipment/:tn باستخدام مفاتيح .env
+// خادم محلي للتجربة (يحتاج Node.js 18+): يقدّم الموقع + نفس مسارات الـ Worker (/api/...) باستخدام مفاتيح .env
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { lookup, extractTracking } from "./worker/bosta.js";
+import worker from "./worker/index.js";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 try {
@@ -26,6 +26,8 @@ fs.watch(root, { recursive: true }, (_, f) => {
 });
 const liveScript = `<script>new EventSource("/__live").onmessage=()=>location.reload()</script>`;
 
+const readBody = (req) => new Promise((ok) => { let d = ""; req.on("data", (c) => (d += c)); req.on("end", () => ok(d)); });
+
 http.createServer(async (req, res) => {
   const u = new URL(req.url, "http://x");
   if (u.pathname === "/__live") {
@@ -34,12 +36,11 @@ http.createServer(async (req, res) => {
     clients.add(res);
     return req.on("close", () => clients.delete(res));
   }
-  const m = u.pathname.match(/^\/api\/shipment\/(.+)$/);
-  if (m) {
-    const tn = extractTracking(decodeURIComponent(m[1]));
-    const out = tn ? await lookup(process.env, tn, { debug: u.searchParams.has("debug") }) : { found: false, error: "رقم تتبع غير صالح" };
-    res.writeHead(out.found ? 200 : 404, { "Content-Type": "application/json; charset=utf-8" });
-    return res.end(JSON.stringify(out));
+  if (u.pathname.startsWith("/api/")) {
+    const body = req.method === "POST" ? await readBody(req) : undefined;
+    const r = await worker.fetch(new Request("http://localhost" + req.url, { method: req.method, headers: { "Content-Type": "application/json" }, body }), process.env);
+    res.writeHead(r.status, { "Content-Type": "application/json; charset=utf-8" });
+    return res.end(await r.text());
   }
   let p = decodeURIComponent(u.pathname);
   if (p.endsWith("/")) p += "index.html";
@@ -52,4 +53,4 @@ http.createServer(async (req, res) => {
   res.writeHead(200, { "Content-Type": type, "Cache-Control": "no-store" });
   if (path.extname(file) === ".html") return res.end(fs.readFileSync(file, "utf8").replace("</body>", liveScript + "</body>"));
   fs.createReadStream(file).pipe(res);
-}).listen(process.env.PORT || 8800, () => console.log(`http://localhost:${process.env.PORT || 8800}`));
+}).listen(process.env.PORT || 8799, () => console.log(`http://localhost:${process.env.PORT || 8799}`));

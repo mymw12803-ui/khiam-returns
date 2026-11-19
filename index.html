@@ -15,7 +15,7 @@
 <main>
   <section class="scan">
     <form id="form">
-      <input id="tn" inputmode="numeric" autocomplete="off" autofocus placeholder="امسح الباركود بالجهاز أو اكتب رقم التتبع ثم Enter">
+      <input id="tn" inputmode="numeric" autocomplete="off" autofocus placeholder="امسح باركود البوليصة أو اكتب رقم التتبع ثم Enter">
       <button type="submit">بحث</button>
       <button type="button" id="cam" class="alt">📷 كاميرا</button>
     </form>
@@ -25,19 +25,32 @@
   <div id="status" role="status"></div>
   <div id="result"></div>
 
-  <details class="manual">
-    <summary>بحث يدوي بنص الوصف / الملحوظة (بدون API)</summary>
-    <textarea id="txt" rows="3" placeholder="مثال: اسدال مشجر اطفالي - اصفر (Y2) / الثالث (QTY 1)"></textarea>
-    <button id="go" type="button">مطابقة</button>
-  </details>
-
-  <section id="hist-wrap" hidden>
-    <h3>آخر ما تم مسحه</h3>
-    <ul id="hist"></ul>
+  <section id="log-wrap" class="ship" hidden>
+    <div class="log-head">
+      <h2>سجل الاستلام <small id="log-count"></small></h2>
+      <div class="tools">
+        <button type="button" id="copy" class="alt">📋 نسخ</button>
+        <button type="button" id="xlsx">⬇️ تنزيل Excel</button>
+        <button type="button" id="clear" class="alt danger">مسح السجل</button>
+      </div>
+    </div>
+    <div class="table-wrap"><table id="log"></table></div>
   </section>
+
+  <details class="manual">
+    <summary>بحث يدوي بالنص (لو البوليصة غير موجودة في Bosta)</summary>
+    <select id="m-type">
+      <option value="Return to Origin">أوردر مرفوض / استرجاع</option>
+      <option value="Exchange">استبدال</option>
+    </select>
+    <textarea id="m-desc" rows="3" placeholder="وصف الشحنة، مثال: اسدال مشجر اطفالي - اصفر (Y2) / الثالث (QTY 1)"></textarea>
+    <textarea id="m-notes" rows="2" placeholder="الملحوظة (للاستبدال)، مثال: تغير المقاس - Ac055DA2 - اسدال رقة اطفالي - بينك (Q2) / الثاني"></textarea>
+    <button id="go" type="button">عرض المطلوب استلامه</button>
+  </details>
 </main>
 
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="config.js"></script>
 <script type="module" src="app.js"></script>
 </body>

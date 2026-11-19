@@ -1,4 +1,7 @@
-// مطابقة وصف الشحنة (من Bosta) مع منتجات متجر khiam.store — تعمل في المتصفح وفي Node
+// تحديد ما يجب استلامه من كل بوليصة Bosta مرتجعة + مطابقته مع منتجات khiam.store
+// يعمل في المتصفح (ولا يحتاج أي خادم)
+
+// ───────── تطبيع النص العربي ─────────
 export function norm(s) {
   return String(s || "")
     .toLowerCase()
@@ -18,11 +21,7 @@ const ACTION = new Set(["استبدال", "استرجاع", "ارجاع", "مر�
 const ALIAS = { ابدال: "اسدال" }; // خطأ إملائي شائع في الوصف
 
 function tokens(s) {
-  return norm(s)
-    .split(" ")
-    .filter(Boolean)
-    .map((t) => ALIAS[t] || t)
-    .filter((t) => !ACTION.has(t));
+  return norm(s).split(" ").filter(Boolean).map((t) => ALIAS[t] || t).filter((t) => !ACTION.has(t));
 }
 
 function codeOf(value) {
@@ -33,10 +32,10 @@ function stripCode(value) {
   return String(value).replace(/\(?\b[a-z]\d{1,2}\b\)?\s*$/i, "").replace(/([^\s])[a-z]\d{1,2}$/i, "$1");
 }
 
-// تقسيم النص إلى قطع، كل قطعة تنتهي بـ (QTY n)
+// ───────── تقسيم النص إلى سطور منتجات، كل سطر قد ينتهي بـ (QTY n) ─────────
 export function splitSegments(text) {
   const out = [];
-  const t = String(text || "").replace(/\r/g, "\n");
+  const t = String(text || "").replace(/\r/g, "\n").replace(/[⁦-⁩‎‏]/g, "");
   const re = /\(\s*(?:QTY\s*(\d+)|(\d+)\s*QTY)\s*\)/gi;
   let last = 0, m;
   while ((m = re.exec(t))) {
@@ -45,10 +44,10 @@ export function splitSegments(text) {
   }
   const tail = t.slice(last).trim();
   if (tail) out.push({ raw: tail, qty: null });
-  // تقسيم إضافي بالسطر أو علامة +
   return out.flatMap((s) => s.raw.split(/\n+|\s\+\s/).map((r, i, a) => ({ raw: r.trim(), qty: i === a.length - 1 ? s.qty : null })).filter((x) => x.raw));
 }
 
+// ───────── مطابقة سطر نصي مع المنتجات (بالاسم + اللون/المقاس) ─────────
 export function matchSegment(seg, products) {
   const segTokens = tokens(seg.raw);
   const S = new Set(segTokens);
@@ -82,19 +81,110 @@ export function matchSegment(seg, products) {
     }
   }
   const top = Math.max(0, ...scored.map((s) => s.score));
-  let picks = top > 0 ? scored.filter((s) => s.score === top) : [];
-  // نفس المنتج بعدة أشكال متطابقة → نكتفي بأول 6
-  picks = picks.slice(0, 6);
+  const picks = (top > 0 ? scored.filter((s) => s.score === top) : []).slice(0, 6);
   const prods = top > 0 ? [...new Set(picks.map((x) => x.product.id))] : best.map((p) => p.id);
+  const exact = top > 0 && picks.length === 1;
   return {
-    raw: seg.raw,
-    qty: seg.qty,
-    exact: top > 0 && prods.length === 1,
-    products: prods.map((id) => best.find((p) => p.id === id)),
-    variants: picks.map((x) => ({ product: x.product, variant: x.variant })),
+    exact,
+    product: exact ? picks[0].product : null,
+    variant: exact ? picks[0].variant : null,
+    candidates: picks.length ? picks.map((x) => ({ product: x.product, variant: x.variant })) : prods.map((id) => ({ product: best.find((p) => p.id === id), variant: null })),
   };
 }
 
-export function matchText(text, products) {
-  return splitSegments(text).map((seg) => matchSegment(seg, products) || { raw: seg.raw, qty: seg.qty, unmatched: true });
+// ───────── أكواد SKU ─────────
+export function skuIndex(products) {
+  const m = new Map();
+  for (const p of products) for (const v of p.variants) if (v.sku) m.set(v.sku.trim().toLowerCase(), { product: p, variant: v });
+  return m;
+}
+
+export function findSkus(text, index) {
+  const out = [];
+  const re = /[A-Za-z][A-Za-z0-9]{3,15}/g;
+  let m;
+  while ((m = re.exec(String(text || "")))) {
+    const hit = index.get(m[0].toLowerCase());
+    if (hit) out.push({ sku: m[0], ...hit });
+  }
+  return out;
+}
+
+// منتج من الكتالوج عبر SKU أو (اسم المنتج + اسم الشكل) — يُستخدم لنتيجة الذكاء الاصطناعي
+export function resolveRef(ref, products, index) {
+  if (ref.sku) {
+    const hit = index.get(String(ref.sku).trim().toLowerCase());
+    if (hit) return hit;
+  }
+  if (ref.title) {
+    const p = products.find((x) => norm(x.title) === norm(ref.title));
+    if (p) {
+      const v = p.variants.find((x) => norm(x.title) === norm(ref.variant)) || (p.variants.length === 1 ? p.variants[0] : null);
+      if (v) return { product: p, variant: v };
+    }
+  }
+  return null;
+}
+
+let seq = 0;
+function makeItem(source, raw, qty, fields) {
+  return { key: `${source}-${++seq}`, source, raw, qty: qty || 1, exact: false, product: null, variant: null, candidates: [], unmatched: false, ...fields };
+}
+
+// يحوّل نصاً (وصف أو ملحوظة) إلى قائمة منتجات
+// strict=true للملاحظات: السطور التي لا تطابق منتجاً تُعتبر سبباً/كلاماً وليست منتجاً
+export function itemsFromText(text, products, index, source, { strict = false } = {}) {
+  const items = [];
+  const leftovers = [];
+  for (const seg of splitSegments(text)) {
+    const skus = findSkus(seg.raw, index);
+    if (skus.length) {
+      for (const s of skus) items.push(makeItem(source, seg.raw, seg.qty, { exact: true, product: s.product, variant: s.variant, sku: s.variant.sku }));
+      continue;
+    }
+    const m = matchSegment(seg, products);
+    if (m) items.push(makeItem(source, seg.raw, seg.qty, { ...m, sku: m.variant?.sku || "" }));
+    else if (strict) leftovers.push(seg.raw);
+    else items.push(makeItem(source, seg.raw, seg.qty, { unmatched: true }));
+  }
+  return { items, leftovers };
+}
+
+// ───────── السيناريو: ماذا يعني هذا المرتجع؟ ─────────
+export const SCENARIOS = {
+  rto: { title: "أوردر مرفوض – رجع للمخزن", hint: "استلم كل المنتجات المكتوبة في وصف الشحنة.", cls: "rt" },
+  exchange: { title: "استبدال – استلم المنتج القديم", hint: "المنتجات الجديدة (في وصف الشحنة) بقيت مع العميل. المرتجع هو المكتوب في الملحوظة.", cls: "ex" },
+  exchangeRefused: { title: "استبدال مرفوض (RTO) – رجع المنتج الجديد", hint: "العميل رفض الاستبدال: استلم ما في وصف الشحنة، والمنتج القديم بقي معه.", cls: "rt" },
+  return: { title: "استرجاع من العميل", hint: "استلم المنتجات المكتوبة في وصف الشحنة.", cls: "rt" },
+  cash: { title: "تحصيل نقدي", hint: "لا توجد منتجات في هذا النوع.", cls: "" },
+};
+
+export function scenarioOf(delivery, { exchangeRefused = false } = {}) {
+  const t = norm(delivery.type).replace(/ /g, "_");
+  if (t.includes("exchange")) return exchangeRefused ? "exchangeRefused" : "exchange";
+  if (t.includes("customer_return") || t.includes("return_pickup")) return "return";
+  if (t.includes("cash")) return "cash";
+  return "rto"; // Return to Origin / SEND / غير معروف: الطرد كله يرجع
+}
+
+// النتيجة: expected = ما يجب استلامه، kept = ما بقي مع العميل (للعلم فقط)
+export function analyze(delivery, products, index, opts = {}) {
+  const scenario = scenarioOf(delivery, opts);
+  const desc = itemsFromText(delivery.description, products, index, "description");
+  let expected = [], kept = [], reason = "";
+  if (scenario === "exchange" || scenario === "exchangeRefused") {
+    const notes = itemsFromText(delivery.notes, products, index, "notes", { strict: true });
+    reason = notes.leftovers.join(" – ");
+    if (scenario === "exchange") { expected = notes.items; kept = desc.items; }
+    else { expected = desc.items; kept = notes.items; }
+  } else if (scenario !== "cash") {
+    expected = desc.items;
+  }
+  const needsAI = scenario !== "cash" && (!expected.length || expected.some((i) => !i.exact));
+  return { scenario, ...SCENARIOS[scenario], expected, kept, reason, needsAI };
+}
+
+// كتالوج مختصر يُرسل للذكاء الاصطناعي
+export function compactCatalog(products) {
+  return products.map((p) => `${p.title}: ` + p.variants.map((v) => `${v.sku || "-"}=${v.title}`).join(" | ")).join("\n");
 }

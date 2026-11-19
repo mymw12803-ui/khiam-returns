@@ -1,8 +1,10 @@
 name = "khiam-returns-api"
 main = "index.js"
 compatibility_date = "2025-01-01"
-# المفاتيح تُضاف كأسرار بالأمر:
+# الأسرار تُضاف بالأمر (أو من لوحة Cloudflare: Settings → Variables and Secrets):
 #   npx wrangler secret put BOSTA_API_KEY_1
 #   npx wrangler secret put BOSTA_API_KEY_2
+#   npx wrangler secret put GEMINI_API_KEY
 [vars]
 ALLOWED_ORIGIN = "https://mymw12803-ui.github.io"
+GEMINI_MODEL = "gemini-3.5-flash-lite"
